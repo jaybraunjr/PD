@@ -1,10 +1,13 @@
 from pmda.parallel import ParallelAnalysisBase
-from defect_protein import PackingDefect2, PackingDefect2PMDA
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from defect.defect_protein import PackingDefect2, PackingDefect2PMDA
 import numpy as np
 from MDAnalysis import Universe
 import MDAnalysis as mda
 import warnings
-import os
+
 warnings.filterwarnings("ignore")
 
 if __name__ == '__main__':
