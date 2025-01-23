@@ -4,35 +4,8 @@ import matplotlib.pyplot as plt
 import os
 from MDAnalysis.lib import distances
 import subprocess
+from .utils import _make_graph, _dfs
 
-
-def _dfs(graph, start):
-    visited, stack = set(), [start]
-    while stack:
-        vertex = stack.pop()
-        if vertex not in visited:
-            visited.add(vertex)
-            stack.extend(graph[vertex] - visited)
-    return visited
-
-
-def _make_graph(matrix):
-    graph = {}
-    xis, yis = matrix.shape
-    for (xi, yi), value in np.ndenumerate(matrix):
-        if value == 0:
-            continue
-        n = xi * yis + yi
-        nlist = []
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                x = divmod(xi + dx, xis)[1]
-                y = divmod(yi + dy, yis)[1]
-                if matrix[x, y] == 1:
-                    ndn = x * yis + y
-                    nlist.append(ndn)
-        graph[n] = set(nlist) - set([n])
-    return graph
 
 
 def calculate_defects(u):

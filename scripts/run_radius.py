@@ -1,10 +1,16 @@
-from ../defect/radius import process_frames, renumber_all_gro_files, calculate_defects
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
+import matplotlib
+matplotlib.use('Agg')  
 import os
-import os
+import sys
+import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from defect.radius import PackingDefect2, PackingDefect2PMDA
+from defect import radius
+import numpy as np
+import os
+os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 
 def plot_histogram(defects, label, color=None):
     h, _ = np.histogram(defects, bins=np.linspace(0, 150, 600))
@@ -26,9 +32,9 @@ if __name__ == "__main__":
         output_dir = os.path.join(output_base_dir, lipid_type)
 
         print(f"Processing {lipid_type}...")
-        output_files = process_frames(frame_start, frame_end, protein_atom_count, directory_prefix, lipid_type, output_dir)
+        output_files = radius.process_frames(frame_start, frame_end, protein_atom_count, directory_prefix, lipid_type, output_dir)
         print(f"Renumbering {lipid_type} files...")
-        renumbered_files = renumber_all_gro_files(output_files)
+        renumbered_files = radius.renumber_all_gro_files(output_files)
         print(f"Completed processing for {lipid_type}.")
 
     processed_defects_up = {}
@@ -45,7 +51,7 @@ if __name__ == "__main__":
 
             if os.path.exists(processed_file_path):
                 u = mda.Universe(processed_file_path)
-                defects_up, defects_down = calculate_defects(u)
+                defects_up, defects_down = radius.calculate_defects(u)
                 defects_up_all.extend(defects_up)
                 defects_down_all.extend(defects_down)
 
@@ -61,4 +67,4 @@ if __name__ == "__main__":
     plot_histogram(processed_defects_down['TGglyc'], label='TGglyc with protein', color='darkgreen')
 
     plt.legend()
-    plt.show()
+    plt.savefig('defect_histogram.png', dpi=300, bbox_inches='tight')

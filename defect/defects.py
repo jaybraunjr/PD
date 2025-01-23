@@ -1,84 +1,22 @@
 from pmda.parallel import ParallelAnalysisBase
 import numpy as np
-# from radii import types_radii
 from MDAnalysis import Universe
 import MDAnalysis as mda
 import warnings
 import os
+from .utils import _make_graph, _dfs
+import json
+
 warnings.filterwarnings("ignore")
-
-traj = 'GRO'
-
-types_radii = {
-'HGA1': 1.3200,
-'HGA2': 1.3400,
-'HOL': 0.2245,
-'HAL1': 1.3200,
-'HAL2': 1.3400,
-'HAL3': 1.3400,
-'HBL':  1.3200,
-'HCL':  0.2245,
-'HL':   0.7,
-'HEL1': 1.25,
-'HEL2': 1.26,
-'CL':   2.00,
-'CCL':  2.00,
-'CTL1': 2.275,
-'CTL2': 2.010,
-'CTL3': 2.040,
-'CTL5': 2.06,
-'CEL1': 2.09,
-'CEL2': 2.08,
-'CRL1': 2.010,
-'CRL2': 2.020,
-'OBL':  1.70,
-'OCL':  1.70,
-'O2L':  1.70,
-'OHL':  1.77,
-'OSL':  1.65006,
-'OSLP': 1.65006,
-'NH3L': 1.85,
-'NTL':  1.85,
-'SL':   2.1,
-'PL':   2.15,
-'CC301':  2.000,
-'CC3062': 2.000,
-'CC311':  2.000,
-'CC3161': 2.000,
-'CC3162': 2.000,
-'CC3163': 2.000,
-'CC321':  2.010,
-'CC3261': 2.010,
-'CC3263': 2.010,
-'CC331':  2.040,
-'CC2O1':  2.000,
-'CC2O2':  2.000,
-'CC2O3':  2.000,
-'CC2O4':  1.800,
-'CC2O5':  1.700,
-'OC2D1':  1.700,
-'OC2D2':  1.700,
-'OC2D3':  1.700,
-'OC2D4':  1.700,
-'OC3C61': 1.650,
-'OC311':  1.765,
-'NC2D1':  1.850,
-'HCP1':   0.2245,
-'HCA1':   1.340,
-'HCA2':   1.340,
-'HCA3':   1.340,
-'OC2DP':  1.70,
-'OC312':  1.77,
-'OC30P':  1.77,
-'PC':     2.15,
-'SC':     2.1
-}
 
 
 class PackingDefect2:
-    def __init__(self):
-        pass
+    def __init__(self, radii_file):
 
+        with open(radii_file, 'r') as file:
+            self.types_radii = json.load(file)
+
+   
     def read_top(self, resname, topology_file):
 
         tails = ['C2{}'.format(i) for i in range(2, 23)] + \
@@ -115,7 +53,7 @@ class PackingDefect2:
                     else:
                         acyl = 3
 
-                    output[atom_name] = [types_radii[atom_type], acyl]
+                    output[atom_name] = [self.types_radii[atom_type], acyl]
 
         return output
     
@@ -126,11 +64,11 @@ class PackingDefect2:
 
         defects = []
         for matrix in matrices:
-            graph = self._make_graph(matrix)
+            graph = _make_graph(matrix)
             visited = set()
             for n in graph:
                 if n not in visited:
-                    defect_loc = self._dfs(graph, n)
+                    defect_loc = _dfs(graph, n)
                     visited.update(defect_loc)
                     defects.append(len(defect_loc))
 
@@ -145,44 +83,6 @@ class PackingDefect2:
             hist /= hist.sum()
 
         return binp, hist
-
-
-
-    def _dfs(self, graph, start):
-        visited, stack = set(), [start]
-        while stack:
-            vertex = stack.pop()
-            if vertex not in visited:
-                visited.add(vertex)
-                stack.extend(graph[vertex] - visited)
-        return visited
-
-
-
-    def _make_graph(self, matrix):
-
-        graph = {}
-        xis, yis = matrix.shape  # Get the dimensions of the matrix
-
-        # Iterate over each element in the matrix
-        for (xi, yi), value in np.ndenumerate(matrix):
-            if value == 0:
-                continue  
-                
-            node_index = xi * yis + yi
-            neighbor_list = []  
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-
-                    x, y = divmod(xi + dx, xis)[1], divmod(yi + dy, yis)[1]
-
-                    if matrix[x, y] == 1 and (x, y) != (xi, yi):
-                        neighbor_node_index = x * yis + y  
-                        neighbor_list.append(neighbor_node_index)  
-
-            graph[node_index] = set(neighbor_list)  
-
-        return graph
 
 
 class PackingDefect2PMDA(ParallelAnalysisBase):
@@ -297,7 +197,9 @@ class PackingDefect2PMDA(ParallelAnalysisBase):
                     M[l][bA] = acyl
                     Z[l][bA] = zatom
 
+
         return M['up'], M['dw'], PL['up']+5, PL['dw']-5, dim
+        # return M['up'].tolist(), M['dw'].tolist(), PL['up'] + 5, PL['dw'] - 5, dim
 
 
 
@@ -339,7 +241,7 @@ class PackingDefect2PMDA(ParallelAnalysisBase):
             df.trajectory[i].dimensions = dim[i]
 
         # Define defect types
-        defects = ['Deep', 'PLacyl', 'TGglyc', 'TGacyl']
+        defects = ['PLacyl', 'TGglyc', 'TGacyl']
 
         # Initialize dictionaries to store defect universe and cluster data
         defect_uni = {}
@@ -349,7 +251,7 @@ class PackingDefect2PMDA(ParallelAnalysisBase):
             defect_clu[d] = []  # Initialize an empty list for each defect type
 
         # Define threshold values for each defect type
-        defect_thr = {'Deep': 0, 'PLacyl': 1, 'TGglyc': 2, 'TGacyl': 3}
+        defect_thr = {'PLacyl': 1, 'TGglyc': 2, 'TGacyl': 3}
 
         # Process each defect type
         for d in defects:
