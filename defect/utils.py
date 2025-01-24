@@ -11,7 +11,7 @@ def _dfs(graph, start):
 
 
 
-def _make_graph(self, matrix):
+def _make_graph(matrix):
 
     graph = {}
     xis, yis = matrix.shape  # Get the dimensions of the matrix

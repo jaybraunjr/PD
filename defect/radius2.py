@@ -8,8 +8,8 @@ from .utils import _make_graph, _dfs
 
 
 
-def calculate_defects(u):
-    defects = []
+def calculate_defects(u, combine=False):
+    defects_combined = []
     defects_up = []
     defects_down = []
     protein_atoms = u.select_atoms("protein")
@@ -52,7 +52,11 @@ def calculate_defects(u):
                 defect_loc = _dfs(graph, n)
                 visited = visited.union(defect_loc)
                 defects_down.append(len(defect_loc))
-
+        
+        if combine:
+            defects_combined.extend(defects_up + defects_down)
+    if combine:
+        return defects_combined
     return defects_up, defects_down
 
 def calculate_defects_from_gro(directory_prefix, file_prefix, start_frame=0):
@@ -100,7 +104,7 @@ def compute_distances(positions1, positions2):
     diff = positions1[:, np.newaxis, :] - positions2
     return np.sqrt(np.sum(diff**2, axis=2))
 
-def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.5, protein_atom_count=627):
+def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.5, protein_atom_count=627, use_cutoff=True):
     with open(input_file, 'r') as f:
         lines = f.readlines()
 
@@ -110,13 +114,15 @@ def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.
     protein_atoms = lines[2:2+protein_atom_count]
     defect_atoms = lines[2+protein_atom_count:-1]
 
-    # Extract positions of protein and defect atoms
-    protein_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in protein_atoms])
-    defect_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in defect_atoms])
-    min_distances = np.min(compute_distances(defect_positions, protein_positions), axis=1)
-    
-    # Filter defect atoms based on the cutoff distance
-    filtered_defect_atoms = [atom for i, atom in enumerate(defect_atoms) if min_distances[i] > cutoff_distance]
+    if use_cutoff:
+        # Extract positions of protein and defect atoms
+        protein_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in protein_atoms])
+        defect_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in defect_atoms])
+        min_distances = np.min(compute_distances(defect_positions, protein_positions), axis=1)
+        # Filter defect atoms based on the cutoff distance
+        filtered_defect_atoms = [atom for i, atom in enumerate(defect_atoms) if min_distances[i] > cutoff_distance]
+    else:
+        filtered_defect_atoms = defect_atoms
 
     with open(output_file, 'w') as f:
         f.write(header + '\n')
@@ -126,14 +132,14 @@ def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.
         f.write(footer)
     
 
-def process_frames(frame_start, frame_end, protein_atom_count, directory_prefix, lipid_type, output_dir, min_cutoff_distance=1.0):
+def process_frames(frame_start, frame_end, protein_atom_count, directory_prefix, lipid_type, output_dir, min_cutoff_distance=1.0, use_cutoff=True):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     output_files = []
     for frame_idx in range(frame_start, frame_end + 1):
         input_file_path = f"{directory_prefix}/{lipid_type}_frame_{frame_idx}.gro"
         output_file_path = f"{output_dir}/{lipid_type}_corrected_frame_{frame_idx}.gro"
-        write_filtered_gro_by_atom_count(input_file_path, output_file_path, min_cutoff_distance, protein_atom_count)
+        write_filtered_gro_by_atom_count(input_file_path, output_file_path, min_cutoff_distance, protein_atom_count, use_cutoff)
         output_files.append(output_file_path)
     return output_files
 

@@ -31,7 +31,7 @@ if __name__ == '__main__':
     trajectory_files = ['../traj/rep3_skip100.xtc']  # Add more filenames as needed
 
     # Base output directory
-    base_output_dir = '../GRO_paper'
+    base_output_dir = '../output'
     os.makedirs(os.path.join(base_output_dir), exist_ok=True)  
 
     for traj_file in trajectory_files:
@@ -42,8 +42,11 @@ if __name__ == '__main__':
         os.makedirs(output_dir, exist_ok=True)
 
         prefix = os.path.join(output_dir, '')  
-        
+
         pdPMDA = defects2.PackingDefect2Sequential([MEMB], radii, prefix=prefix, leaflet='both')
         pdPMDA.process()
+
+        # If we want to run it as paralell
+
         # pdPMDA = defects2.PackingDefect2Sequential([MEMB], radii, prefix=prefix, leaflet='both')
         # pdPMDA.run(n_jobs=1)

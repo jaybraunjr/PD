@@ -4,7 +4,6 @@ import MDAnalysis as mda
 import warnings
 import os
 import json
-from .utils import _make_graph, _dfs
 
 warnings.filterwarnings("ignore")
 
@@ -42,7 +41,6 @@ class PackingDefect2:
                     break
                 elif startread and line.startswith('ATOM'):
                     atom_name, atom_type = line.split()[1:3]
-
                     acyl = -1
                     if resname != 'TRIO':
                         if atom_name in tails:
@@ -56,9 +54,10 @@ class PackingDefect2:
 
         return output
 
+
 class PackingDefect2Sequential:
 
-    def __init__(self, atomgroups, radii, prefix='./', leaflet='both'):
+    def __init__(self, atomgroups, radii, prefix='./', leaflet='both', defect_types=None, defect_thresholds=None):
 
         self.N = 10000 
         self.universe = atomgroups[0].universe
@@ -73,6 +72,9 @@ class PackingDefect2Sequential:
         self.protein_atoms = self.universe.select_atoms("protein", updating=True)
         self.bbox_data = {"x_min": 0, "x_max": 0, "y_min": 0, "y_max": 0} 
         self._results = []
+        # Allow customizable defect types and thresholds
+        self.defect_types = defect_types or ['PLacyl', 'TGglyc', 'TGacyl']
+        self.defect_thresholds = defect_thresholds or {t: i + 1 for i, t in enumerate(self.defect_types)}
 
     def process(self):
 
@@ -152,7 +154,6 @@ class PackingDefect2Sequential:
             for atom in atom_group:
                 xatom, yatom, zatom = atom.position
                 radius, acyl = self.radii[atom.resname][atom.name]
-
                 self._update_defect_matrix(
                     leaflet, xatom, yatom, zatom, radius, acyl, xx, yy, M, Z, zlim
                 )
@@ -178,119 +179,6 @@ class PackingDefect2Sequential:
         bA = bAr & bAnP & baZ
         M[leaflet][bA] = acyl
         Z[leaflet][bA] = zatom
-
-
-
-    # def _conclude(self):
-    #     print("Concluding...")
-    #     # Initialize lists to store results
-    #     Mup = []; Mdw = []; zlimup = []; zlimdw = []; dim = []
-    #     for r in self._results:
-    #         for rr in r:
-    #             if rr[0] is None:
-    #                 continue
-    #             Mup.append(rr[0])  # Append upper leaflet matrix
-    #             Mdw.append(rr[1])  # Append lower leaflet matrix
-    #             zlimup.append(rr[2])  # Append upper leaflet z-limit
-    #             zlimdw.append(rr[3])  # Append lower leaflet z-limit
-    #             dim.append(rr[4])  # Append frame dimensions
-
-    #     # Set up a new Universe for storing defect information
-    #     N = self.N  # The maximum number of defects
-    #     df = Universe.empty(n_atoms=N,
-    #                         n_residues=N,
-    #                         atom_resindex=np.arange(N),
-    #                         residue_segindex=[0] * N,
-    #                         trajectory=True)
-
-    #     df.add_TopologyAttr('resname', ['O'] * N)
-    #     df.add_TopologyAttr('name', ['O'] * N)
-    #     df.add_TopologyAttr('resid', np.arange(N) + 1)
-
-    #     # Initialize the trajectory data for the new Universe
-    #     nframes = len(dim)
-    #     fac = np.zeros((nframes, N, 3))
-
-
-    #     print(f"Number of frames: {nframes}")
-    #     print(f"Number of atoms: {self.N}")
-    #     print(f"Shape of fac array: {fac.shape}")  # Debug print for array shape
-    
-
-    #     df.load_new(fac, order='fac')
-    #     df.trajectory[0].dt = self.dt 
-
-    #     for i, ts in enumerate(df.trajectory):
-    #         df.trajectory[i].dimensions = dim[i]
-
-    #     # Define defect types
-    #     defects = ['PLacyl', 'TGglyc', 'TGacyl']
-
-    #     # Initialize dictionaries to store defect universe and cluster data
-    #     defect_uni = {}
-    #     defect_clu = {}
-    #     for d in defects:
-    #         defect_uni[d] = df.copy()  # Create a copy of the universe for each defect type
-    #         defect_clu[d] = []  # Initialize an empty list for each defect type
-
-    #     # Define threshold values for each defect type
-    #     defect_thr = {'PLacyl': 1, 'TGglyc': 2, 'TGacyl': 3}
-
-    #     # Process each defect type
-    #     for d in defects:
-    #         for i, ts in enumerate(defect_uni[d].trajectory):
-    #             num = 0
-
-    #             # Identify defect locations
-    #             bA = (Mup[i] == defect_thr[d]) 
-    #             defect_clu[d].append(bA.astype(int))
-    #             ind = np.where(bA)
-    #             xs, ys = ind[1], ind[0]
-
-    #             # Place defects in the universe
-    #             for x1, y1 in zip(xs, ys):
-    #                 if num >= self.N:
-    #                     break
-    #                 pos = np.array([x1, y1, zlimup[i]])
-    #                 defect_uni[d].atoms[num].position = pos
-    #                 num += 1
-
-    #             # Repeat for the lower leaflet
-    #             bA = (Mdw[i] == defect_thr[d])
-    #             defect_clu[d].append(bA.astype(int))
-    #             ind = np.where(bA)
-    #             xs, ys = ind[1], ind[0]
-
-    #             for x1, y1 in zip(xs, ys):
-    #                 if num >= self.N:
-    #                     break
-    #                 pos = np.array([x1, y1, zlimdw[i]])
-    #                 defect_uni[d].atoms[num].position = pos
-    #                 num += 1
-
-
-    #     output_base_dir = 'GRO_paper'  # Base directory for outputs
-    #     for d in defects:
-    #         # Use only the prefix to set the output directory
-    #         output_dir = os.path.join(self.prefix, d)
-    #         if not os.path.exists(output_dir):
-    #             os.makedirs(output_dir)
-
-    #         u = defect_uni[d]
-
-    #         for i, ts in enumerate(u.trajectory):
-    #             self.protein_atoms.universe.trajectory[i]  
-
-    #             combined_universe = mda.Merge(self.protein_atoms, u.atoms)
-
-    #             # Update positions in the combined universe
-    #             combined_universe.atoms.positions[len(self.protein_atoms):] = ts.positions
-    #             combined_universe.atoms.positions[:len(self.protein_atoms)] = self.protein_atoms.positions
-    #             combined_universe.trajectory.ts.dimensions = ts.dimensions
-
-    #             # Construct file path for writing the combined universe
-    #             output_filepath = os.path.join(output_dir, f"{d}_frame_{i}.gro")
-    #             combined_universe.atoms.write(output_filepath)
 
 
     def _conclude(self):
@@ -354,10 +242,11 @@ class PackingDefect2Sequential:
 
 
     def _process_defects(self, df, Mup, Mdw, zlimup, zlimdw, dim, defects, defect_thr):
-        defect_uni = {d: df.copy() for d in defects}
-        defect_clu = {d: [] for d in defects}
+        defect_uni = {d: df.copy() for d in self.defect_types}
+        defect_clu = {d: [] for d in self.defect_types}
 
-        for d in defects:
+        for d in self.defect_types:
+            threshold = self.defect_thresholds[d]
             for i, ts in enumerate(defect_uni[d].trajectory):
                 num = 0
                 num = self._process_leaflet(
@@ -366,8 +255,7 @@ class PackingDefect2Sequential:
                 self._process_leaflet(
                     defect_thr[d], Mdw[i], zlimdw[i], defect_uni[d], num
                 )
-
-        self._save_outputs(defect_uni, defects)
+        self._save_outputs(defect_uni, self.defect_types)
 
     def _process_leaflet(self, threshold, M, zlim, defect_universe, num):
         bA = (M == threshold)
