@@ -4,6 +4,13 @@ import MDAnalysis as mda
 import warnings
 import os
 import json
+from .utils import (
+    apply_pbc,
+    calculate_bounding_box,
+    initialize_grid,
+    update_defect_matrix,
+    compute_pairwise_distances
+)
 
 warnings.filterwarnings("ignore")
 
@@ -96,49 +103,18 @@ class PackingDefect2Sequential:
         dim = ts.dimensions.copy()
         pbc = dim[:3]
         print(f"time: {ts.time / 1000:.3f}    pbc: {pbc[0]:.3f} {pbc[1]:.3f} {pbc[2]:.3f}")
-        self._apply_pbc(ag, pbc)
+
+        # Apply PBC using the generalized utility
+        ag.universe.atoms.positions = apply_pbc(ag.universe.atoms.positions, pbc)
+
         hz = np.average(ag.select_atoms('name P').positions[:, 2])
-        self._calculate_bounding_box(protein_atoms)
-        xx, yy, M, Z = self._initialize_grid(pbc, hz)
-        zlim, PL = self._analyze_leaflets(ag, hz, xx, yy, M, Z)
+        self.bbox_data = calculate_bounding_box(protein_atoms)
+        grid = initialize_grid(pbc, self.dx, self.dy, hz)
+        zlim, PL = self._analyze_leaflets(ag, hz, grid)
 
-        return M['up'], M['dw'], PL['up'] + 5, PL['dw'] - 5, dim
+        return grid['up'], grid['dw'], PL['up'] + 5, PL['dw'] - 5, dim
 
-    # --- Helper Functions ---
-    def _apply_pbc(self, ag, pbc):
-
-        pbc_xy0 = np.array([pbc[0], pbc[1], 0])
-        pbc_xyz = np.array([pbc[0], pbc[1], pbc[2]])
-        ag.universe.atoms.positions -= pbc_xy0 * np.floor(ag.universe.atoms.positions / pbc_xyz)
-
-    def _calculate_bounding_box(self, protein_atoms):
-
-        protein_bbox = protein_atoms.bbox()
-        x_min, y_min, _ = protein_bbox[0]
-        x_max, y_max, _ = protein_bbox[1]
-        x_min -= 10
-        x_max += 10
-        y_min -= 10
-        y_max += 10
-
-        self.bbox_data = {
-            "x_min": x_min,
-            "x_max": x_max,
-            "y_min": y_min,
-            "y_max": y_max,
-        }
-
-    def _initialize_grid(self, pbc, hz):
-
-        xarray = np.arange(0, pbc[0], self.dx)
-        yarray = np.arange(0, pbc[1], self.dy)
-        xx, yy = np.meshgrid(xarray, yarray)
-        M = {'up': np.zeros_like(xx), 'dw': np.zeros_like(xx)}
-        Z = {'up': np.zeros_like(xx) + hz, 'dw': np.zeros_like(xx) + hz}
-
-        return xx, yy, M, Z
-
-    def _analyze_leaflets(self, ag, hz, xx, yy, M, Z):
+    def _analyze_leaflets(self, ag, hz, grid):
 
         zlim = {'up': np.max(ag.positions[:, 2]), 'dw': np.min(ag.positions[:, 2])}
         PL = {
@@ -154,42 +130,18 @@ class PackingDefect2Sequential:
             for atom in atom_group:
                 xatom, yatom, zatom = atom.position
                 radius, acyl = self.radii[atom.resname][atom.name]
-                self._update_defect_matrix(
-                    leaflet, xatom, yatom, zatom, radius, acyl, xx, yy, M, Z, zlim
+                update_defect_matrix(
+                    grid, xatom, yatom, zatom, radius, acyl, leaflet, self.dx, self.dy
                 )
 
         return zlim, PL
-
-    def _update_defect_matrix(self, leaflet, xatom, yatom, zatom, radius, acyl, xx, yy, M, Z, zlim):
-
-        dxx = xx - xatom
-        dxx -= xx.shape[0] * np.round(dxx / xx.shape[0])
-        dyy = yy - yatom
-        dyy -= yy.shape[1] * np.round(dyy / yy.shape[1])
-
-        dist_meet = (np.sqrt(self.dx**2 + self.dy**2) / 2 + radius)**2
-        bAr = dxx**2 + dyy**2 < dist_meet
-
-        if acyl == -1:
-            M[leaflet][bAr] = acyl
-            return
-
-        bAnP = M[leaflet] >= 0
-        baZ = zatom > Z[leaflet] if leaflet == 'up' else zatom < Z[leaflet]
-        bA = bAr & bAnP & baZ
-        M[leaflet][bA] = acyl
-        Z[leaflet][bA] = zatom
-
 
     def _conclude(self):
 
         print("Concluding...")
         Mup, Mdw, zlimup, zlimdw, dim = self._aggregate_results()
-        # self.N = self._calculate_max_defects(Mup, Mdw)
         df = self._initialize_defect_universe(dim)
-        defects = ['PLacyl', 'TGglyc', 'TGacyl']
-        defect_thr = {'PLacyl': 1, 'TGglyc': 2, 'TGacyl': 3}
-        self._process_defects(df, Mup, Mdw, zlimup, zlimdw, dim, defects, defect_thr)
+        self._process_defects(df, Mup, Mdw, zlimup, zlimdw, dim)
 
     def _aggregate_results(self):
 
@@ -205,12 +157,6 @@ class PackingDefect2Sequential:
                 dim.append(rr[4])
 
         return Mup, Mdw, zlimup, zlimdw, dim
-
-
-    def _calculate_max_defects(self, Mup, Mdw):
-        max_up = max(np.sum(m > 0) for m in Mup) if Mup else 0
-        max_dw = max(np.sum(m > 0) for m in Mdw) if Mdw else 0
-        return max(max_up, max_dw)
 
     def _initialize_defect_universe(self, dim):
         nframes = len(dim)
@@ -240,21 +186,15 @@ class PackingDefect2Sequential:
 
         return df
 
-
-    def _process_defects(self, df, Mup, Mdw, zlimup, zlimdw, dim, defects, defect_thr):
+    def _process_defects(self, df, Mup, Mdw, zlimup, zlimdw, dim):
         defect_uni = {d: df.copy() for d in self.defect_types}
-        defect_clu = {d: [] for d in self.defect_types}
 
         for d in self.defect_types:
             threshold = self.defect_thresholds[d]
             for i, ts in enumerate(defect_uni[d].trajectory):
                 num = 0
-                num = self._process_leaflet(
-                    defect_thr[d], Mup[i], zlimup[i], defect_uni[d], num
-                )
-                self._process_leaflet(
-                    defect_thr[d], Mdw[i], zlimdw[i], defect_uni[d], num
-                )
+                num = self._process_leaflet(threshold, Mup[i], zlimup[i], defect_uni[d], num)
+                self._process_leaflet(threshold, Mdw[i], zlimdw[i], defect_uni[d], num)
         self._save_outputs(defect_uni, self.defect_types)
 
     def _process_leaflet(self, threshold, M, zlim, defect_universe, num):
@@ -284,15 +224,9 @@ class PackingDefect2Sequential:
                 self.protein_atoms.universe.trajectory[i]
                 combined_universe = mda.Merge(self.protein_atoms, u.atoms)
 
-                # Update positions
                 combined_universe.atoms.positions[len(self.protein_atoms):] = ts.positions
                 combined_universe.atoms.positions[:len(self.protein_atoms)] = self.protein_atoms.positions
                 combined_universe.trajectory.ts.dimensions = ts.dimensions
 
-                # Save to file
                 output_filepath = os.path.join(output_dir, f"{d}_frame_{i}.gro")
                 combined_universe.atoms.write(output_filepath)
-
-
-
-

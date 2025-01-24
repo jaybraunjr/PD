@@ -1,12 +1,15 @@
 import numpy as np
 import MDAnalysis as mda
-import matplotlib.pyplot as plt
 import os
-from MDAnalysis.lib import distances
 import subprocess
-from .utils import _make_graph, _dfs
-
-
+from MDAnalysis.lib import distances
+from .utils import (
+    apply_pbc,
+    initialize_grid,
+    compute_pairwise_distances,
+    _make_graph,
+    _dfs
+)
 
 def calculate_defects(u, combine=False):
     defects_combined = []
@@ -16,45 +19,42 @@ def calculate_defects(u, combine=False):
 
     for ts in u.trajectory:
         ag = u.select_atoms('prop z > 0')
-        hz = np.average(ag.positions[:,2])
-        agup = u.select_atoms('prop z > %f' %hz)
-        agdw = u.select_atoms('prop z < %f' %hz)
+        hz = np.average(ag.positions[:, 2])
+        agup = u.select_atoms(f'prop z > {hz}')
+        agdw = u.select_atoms(f'prop z < {hz}')
 
-        xarray = np.arange(0, u.dimensions[0], 1)
-        yarray = np.arange(0, u.dimensions[1], 1)
-        xx, yy = np.meshgrid(xarray, yarray)
-        Mup = np.zeros_like(xx)
-        Mdw = np.zeros_like(xx)
-        
-        ### UP
-        xind = np.minimum(agup.positions[:,0].astype(np.int64), Mup.shape[0]-1)
-        yind = np.minimum(agup.positions[:,1].astype(np.int64), Mup.shape[1]-1)
-        Mup[xind, yind] = 1
+        grid_up = initialize_grid(u.dimensions, dx=1, dy=1, hz=hz)
+        grid_down = initialize_grid(u.dimensions, dx=1, dy=1, hz=hz)
 
-                    
-        graph = _make_graph(Mup)
-        visited = set([])
-        for n in graph:
-            if n not in visited:
-                defect_loc = _dfs(graph, n)
-                visited = visited.union(defect_loc)
+        # Populate defect matrices for the upper leaflet
+        xind = np.minimum(agup.positions[:, 0].astype(np.int64), grid_up['up'].shape[0] - 1)
+        yind = np.minimum(agup.positions[:, 1].astype(np.int64), grid_up['up'].shape[1] - 1)
+        grid_up['up'][xind, yind] = 1
+
+        graph_up = _make_graph(grid_up['up'])
+        visited_up = set()
+        for node in graph_up:
+            if node not in visited_up:
+                defect_loc = _dfs(graph_up, node)
+                visited_up.update(defect_loc)
                 defects_up.append(len(defect_loc))
-        
-        ### DW  
-        xind = np.minimum(agdw.positions[:,0].astype(np.int64), Mdw.shape[0]-1)
-        yind = np.minimum(agdw.positions[:,1].astype(np.int64), Mdw.shape[1]-1)
-        Mdw[xind, yind] = 1
 
-        graph = _make_graph(Mdw)
-        visited = set([])
-        for n in graph:
-            if n not in visited:
-                defect_loc = _dfs(graph, n)
-                visited = visited.union(defect_loc)
+        # Populate defect matrices for the lower leaflet
+        xind = np.minimum(agdw.positions[:, 0].astype(np.int64), grid_down['dw'].shape[0] - 1)
+        yind = np.minimum(agdw.positions[:, 1].astype(np.int64), grid_down['dw'].shape[1] - 1)
+        grid_down['dw'][xind, yind] = 1
+
+        graph_down = _make_graph(grid_down['dw'])
+        visited_down = set()
+        for node in graph_down:
+            if node not in visited_down:
+                defect_loc = _dfs(graph_down, node)
+                visited_down.update(defect_loc)
                 defects_down.append(len(defect_loc))
-        
+
         if combine:
             defects_combined.extend(defects_up + defects_down)
+
     if combine:
         return defects_combined
     return defects_up, defects_down
@@ -88,10 +88,10 @@ def process_directories(base_directory):
         'resultsTGacyl': 'TGacyl',
         'resultsTGglyc': 'TGglyc'
     }
-    
+
     all_defects_up = {}
     all_defects_down = {}
-    
+
     for dir_suffix, file_suffix in suffix_pairs.items():
         directory_prefix = os.path.join(base_directory, dir_suffix)
         defects_up, defects_down = calculate_defects_from_gro(directory_prefix, file_suffix)
@@ -101,8 +101,7 @@ def process_directories(base_directory):
     return all_defects_up, all_defects_down
 
 def compute_distances(positions1, positions2):
-    diff = positions1[:, np.newaxis, :] - positions2
-    return np.sqrt(np.sum(diff**2, axis=2))
+    return compute_pairwise_distances(positions1, positions2)
 
 def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.5, protein_atom_count=627, use_cutoff=True):
     with open(input_file, 'r') as f:
@@ -111,15 +110,13 @@ def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.
     header = lines[0].strip()
     footer = lines[-1].strip()
 
-    protein_atoms = lines[2:2+protein_atom_count]
-    defect_atoms = lines[2+protein_atom_count:-1]
+    protein_atoms = lines[2:2 + protein_atom_count]
+    defect_atoms = lines[2 + protein_atom_count:-1]
 
     if use_cutoff:
-        # Extract positions of protein and defect atoms
         protein_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in protein_atoms])
         defect_positions = np.array([[float(line[20:28].strip()), float(line[28:36].strip()), float(line[36:44].strip())] for line in defect_atoms])
         min_distances = np.min(compute_distances(defect_positions, protein_positions), axis=1)
-        # Filter defect atoms based on the cutoff distance
         filtered_defect_atoms = [atom for i, atom in enumerate(defect_atoms) if min_distances[i] > cutoff_distance]
     else:
         filtered_defect_atoms = defect_atoms
@@ -129,8 +126,7 @@ def write_filtered_gro_by_atom_count(input_file, output_file, cutoff_distance=1.
         f.write(f"{len(protein_atoms) + len(filtered_defect_atoms)}\n")
         f.writelines(protein_atoms)
         f.writelines(filtered_defect_atoms)
-        f.write(footer)
-    
+        f.write(footer + '\n')
 
 def process_frames(frame_start, frame_end, protein_atom_count, directory_prefix, lipid_type, output_dir, min_cutoff_distance=1.0, use_cutoff=True):
     if not os.path.exists(output_dir):
@@ -145,7 +141,7 @@ def process_frames(frame_start, frame_end, protein_atom_count, directory_prefix,
 
 def renumber_gro(input_file, output_file):
     try:
-        subprocess.run(['gmx', 'genconf','-f', input_file, '-o', output_file, '-renumber'], check=True)
+        subprocess.run(['gmx', 'genconf', '-f', input_file, '-o', output_file, '-renumber'], check=True)
         print(f'Renumbered gro saved to {output_file}')
     except subprocess.CalledProcessError as e:
         print(f'Error in renumbering: {e}')
