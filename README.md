@@ -13,6 +13,10 @@ This repository contains Python scripts and tools for identifying, analyzing, an
 ![image](https://github.com/user-attachments/assets/be3a6ba1-96b4-40f5-9e44-fb903c30f052)
 
 
+https://github.com/user-attachments/assets/5f44d331-6c67-4bdd-aad1-71afb2ab3141
+
+
+
 ## Files
 
 - **`run_defect.py`**: Executes the primary defect analysis pipeline.
