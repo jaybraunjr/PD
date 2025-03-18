@@ -10,6 +10,9 @@ This repository contains Python scripts and tools for identifying, analyzing, an
 - **Visualization**: Plot defect frequencies and distributions for in-depth insights.
 - **Radius-Based Analysis**: Includes tools for computing defect radii around proteins and comparing them over time.
 
+![image](https://github.com/user-attachments/assets/be3a6ba1-96b4-40f5-9e44-fb903c30f052)
+
+
 ## Files
 
 - **`run_defect.py`**: Executes the primary defect analysis pipeline.
