@@ -1,4 +1,4 @@
-from pmda.parallel import ParallelAnalysisBase
+
 import numpy as np
 from MDAnalysis import Universe
 import MDAnalysis as mda

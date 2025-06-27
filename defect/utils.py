@@ -1,5 +1,7 @@
 import numpy as np
-
+import MDAnalysis as mda
+from MDAnalysis import Universe
+import numpy as np
 
 def apply_pbc(positions, box):
     """Apply periodic boundary conditions to positions."""
@@ -113,3 +115,53 @@ def write_to_file(output_file, data):
     with open(output_file, 'w') as f:
         for line in data:
             f.write(f"{line}\n")
+
+def validate_defect_thresholds(defect_types, defect_thresholds):
+    for dt in defect_types:
+        if dt not in defect_thresholds:
+            raise ValueError(f"Missing threshold for defect type: {dt}")
+
+
+def populate_grid_with_atoms(grid, atom_group, radii_lookup, leaflet, dx, dy):
+    for atom in atom_group:
+        x, y, z = atom.position
+        try:
+            radius, acyl = radii_lookup[atom.resname][atom.name]
+        except KeyError:
+            continue  # skip atoms not present in radii lookup
+        update_defect_matrix(grid, x, y, z, radius, acyl, leaflet, dx, dy)
+
+def get_defect_coordinates(grid, threshold):
+    mask = (grid == threshold)
+    ys, xs = np.where(mask)
+    return xs, ys
+
+def write_combined_gro(protein_atoms, defect_atoms, dimensions, filepath):
+    combined = mda.Merge(protein_atoms, defect_atoms)
+    combined.atoms.positions[:len(protein_atoms)] = protein_atoms.positions
+    combined.atoms.positions[len(protein_atoms):] = defect_atoms.positions
+    combined.trajectory.ts.dimensions = dimensions
+    combined.atoms.write(filepath)
+
+
+
+def initialize_empty_defect_universe(n_atoms, nframes, dims, dt):
+    fac = np.zeros((nframes, n_atoms, 3))
+
+    df = Universe.empty(
+        n_atoms=n_atoms,
+        n_residues=n_atoms,
+        atom_resindex=np.arange(n_atoms),
+        residue_segindex=[0] * n_atoms,
+        trajectory=True,
+    )
+    df.add_TopologyAttr('resname', ['O'] * n_atoms)
+    df.add_TopologyAttr('name', ['O'] * n_atoms)
+    df.add_TopologyAttr('resid', np.arange(n_atoms) + 1)
+    df.load_new(fac, order='fac')
+    df.trajectory[0].dt = dt
+
+    for i, ts in enumerate(df.trajectory):
+        df.trajectory[i].dimensions = dims[i]
+
+    return df
