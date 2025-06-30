@@ -13,14 +13,14 @@ This repository contains Python scripts and tools for identifying, analyzing, an
 - **Radius-Based Analysis**: Includes tools for computing defect radii around proteins and comparing them over time.
 <p>
   <img src="https://github.com/user-attachments/assets/32cbe599-252c-4f6d-b1e1-a49f109eb614" width="450" />
-  <img src="https://github.com/user-attachments/assets/4e6aae24-3823-4c3d-8f9a-446fe4643c6b" width="250" />
+  <img src="https://github.com/user-attachments/assets/4e6aae24-3823-4c3d-8f9a-446fe4643c6b" width="210" />
 </p>
 
 
+
+This movie illustrates the dynamic interaction between a membrane protein and packing defects over the course of asimulation. 
+
 https://github.com/user-attachments/assets/5f44d331-6c67-4bdd-aad1-71afb2ab3141
-
-
-
 
 ## Files
 
