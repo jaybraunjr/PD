@@ -10,8 +10,14 @@ def cli():
 @click.option('--top', required=True, help="Topology file (.gro)")
 @click.option('--traj', required=True, help="Trajectory file (.xtc/.dcd)")
 @click.option('--output-dir', default='output', help="Output directory")
-def run_defect_cmd(top, traj, output_dir):
-    run_defect(top, traj, output_dir)
+@click.option('--radii-file', default='defect/types_radii.json',
+              help='JSON file with atom type radii')
+@click.option('--defect-config', default=None,
+              help='JSON file mapping defect names to thresholds')
+def run_defect_cmd(top, traj, output_dir, radii_file, defect_config):
+    run_defect(top, traj, output_dir,
+               radii_file=radii_file,
+               defect_config=defect_config)
 
 @cli.command()
 @click.option('--base-directory', required=True, help="Input GRO directory")

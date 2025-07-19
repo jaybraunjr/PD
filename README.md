@@ -57,8 +57,25 @@ be installed separately and available in your environment.
 ```bash
 defect-tool run-defect --top path/to/system.gro \
                       --traj path/to/trajectory.xtc \
-                      --output-dir results/defects
+                      --output-dir results/defects \
+                      --radii-file path/to/radii.json \
+                      --defect-config path/to/defects.json
 ```
+
+### Defect configuration file
+
+The JSON file supplied to `--defect-config` should contain a mapping of defect
+names to integer threshold values:
+
+```json
+{
+  "PLacyl": 1,
+  "TGglyc": 2,
+  "TGacyl": 3
+}
+```
+
+When not provided, these defaults are used automatically.
 
 ### Run radius analysis
 

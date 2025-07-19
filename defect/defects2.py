@@ -64,7 +64,8 @@ class PackingDefect2:
 
 
 class PackingDefect2Sequential:
-    def __init__(self, atomgroups, radii, prefix='./', leaflet='both', defect_types=None, defect_thresholds=None):
+    def __init__(self, atomgroups, radii, prefix='./', leaflet='both',
+                 defect_types=None, defect_thresholds=None):
         self.N = 10000 
         self.universe = atomgroups[0].universe
         self.dt = self.universe.trajectory[0].dt 
@@ -78,8 +79,16 @@ class PackingDefect2Sequential:
         self.bbox_data = {"x_min": 0, "x_max": 0, "y_min": 0, "y_max": 0} 
         self._results = []
 
+        if defect_types is None and defect_thresholds is not None:
+            defect_types = list(defect_thresholds.keys())
+
         self.defect_types = defect_types or ['PLacyl', 'TGglyc', 'TGacyl']
-        self.defect_thresholds = defect_thresholds or {t: i + 1 for i, t in enumerate(self.defect_types)}
+
+        if defect_thresholds is None:
+            self.defect_thresholds = {t: i + 1 for i, t in enumerate(self.defect_types)}
+        else:
+            self.defect_thresholds = defect_thresholds
+
         validate_defect_thresholds(self.defect_types, self.defect_thresholds)
 
     def process(self):
